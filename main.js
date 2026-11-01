@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------
 // Sharn's Little World: walking animation test
 // Arrow keys / WASD move the player in four directions (no diagonals).
-// Q or Shift opens the transformation dial: pick a form, then confirm (appearance only).
+// Q or Shift switches the player between Clair and Bulbasaur (appearance only).
 // Cubone and Bulbasaur wander on their own. Character details live in the data folder.
 // ---------------------------------------------------------------
 
@@ -13,7 +13,8 @@ const GRASS_COLOUR = "#5aa85a"; // placeholder for the open grass field
 const FOOT_PAD = 0.1; // fraction of each image's height that is empty space under the feet
 const FRAME_TIME = 0.15; // seconds each walk frame is shown
 const WANDER_SPEED_FACTOR = 0.5; // wandering Pokemon walk at this fraction of their normal speed
-const DIAL_KEYS = ["q", "shift"]; // either key opens the transformation dial (and confirms a choice)
+const TRANSFORM_KEYS = ["q"]; // either key switches the player's form
+const PLAYER_FORMS = ["clair", "bulbasaur"]; // what the key cycles through (ids from the data folder)
 const BOUNDS = { minX: 60, maxX: GAME_W - 60, minY: 170, maxY: GAME_H - 20 }; // limits for the feet position
 
 // Everything that can be drawn as a character, from data/trainer.js and data/pokemon.js
@@ -120,13 +121,17 @@ class Actor {
     ctx.fill();
 
     // anchor on the feet: bottom-centre of the sprite, minus the empty padding
-    ctx.drawImage(
-      img,
-      Math.round(this.x - w / 2),
-      Math.round(this.y - h * (1 - FOOT_PAD)),
-      w,
-      h,
-    );
+    const left = Math.round(this.x - w / 2);
+    const top = Math.round(this.y - h * (1 - FOOT_PAD));
+    ctx.drawImage(img, left, top, w, h);
+
+    // remember roughly where the body is, so flowers in front of it know to fade
+    this.bounds = {
+      left: left + w * 0.15,
+      right: left + w * 0.85,
+      top: top + h * 0.1,
+      bottom: top + h * 0.9,
+    };
   }
 }
 
@@ -144,16 +149,9 @@ const DIR_KEYS = {
 const heldDirs = []; // held direction keys, most recently pressed last
 
 window.addEventListener("keydown", (e) => {
-  const key = e.key.toLowerCase();
-  if (dialOpen) {
-    handleDialKey(e, key);
-    return;
-  }
   if (e.key.startsWith("Arrow")) e.preventDefault(); // stop the page scrolling
-  if (DIAL_KEYS.includes(key) && !e.repeat) {
-    openDial();
-    return;
-  }
+  const key = e.key.toLowerCase();
+  if (TRANSFORM_KEYS.includes(key) && !e.repeat) transformPlayer();
   if (key in DIR_KEYS && !heldDirs.includes(key)) heldDirs.push(key);
 });
 window.addEventListener("keyup", (e) => {
@@ -172,95 +170,16 @@ function readInput() {
   return { dx, dy };
 }
 
-// ---------- Transformation dial ----------
-// A small HTML overlay (see index.html and style.css). Open it, pick a form, confirm.
-// Only the player's appearance and speed change. The wandering Pokemon are not affected.
+// ---------- Transformation ----------
 let player = null;
-let currentForm = "clair"; // id of the form the player is in
-const DIAL_FORMS = Object.keys(CHARACTERS); // every character can be chosen for now
-let dialOpen = false;
-let dialIndex = 0;
+let formIndex = 0;
 
-const dialEl = document.getElementById("dial");
-const dialList = document.getElementById("dial-list");
-
-// One card per form, using the character's front-facing sprite
-function buildDial() {
-  for (const id of DIAL_FORMS) {
-    const c = CHARACTERS[id];
-    const { base, standing } = c.sprites.normal;
-
-    const img = new Image();
-    img.src = standing ? `${base}-standing-front.png` : `${base}-front-1.png`;
-    img.alt = "";
-    img.addEventListener("load", () => {
-      // same relative size as in the game
-      img.style.width = `${img.naturalWidth * c.render.scale}px`;
-    });
-
-    const label = document.createElement("span");
-    label.textContent = c.name;
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.tabIndex = -1; // the dial is driven by the keyboard handler below, not by tabbing
-    button.dataset.id = id;
-    button.append(img, label);
-    button.addEventListener("click", () => {
-      dialIndex = DIAL_FORMS.indexOf(id);
-      closeDial(true);
-    });
-
-    const item = document.createElement("li");
-    item.append(button);
-    dialList.append(item);
-  }
-}
-
-function renderDial() {
-  [...dialList.children].forEach((item, i) => {
-    item.firstElementChild.classList.toggle("selected", i === dialIndex);
-  });
-}
-
-function openDial() {
+// Only the player's appearance and speed change. The wandering Pokemon are not affected.
+function transformPlayer() {
   if (!player) return;
-  heldDirs.length = 0; // stop walking while the dial is open
-  dialIndex = DIAL_FORMS.indexOf(currentForm); // start on the current form
-  dialOpen = true;
-  dialEl.hidden = false;
-  renderDial();
+  formIndex = (formIndex + 1) % PLAYER_FORMS.length;
+  player.setCharacter(PLAYER_FORMS[formIndex]);
 }
-
-function closeDial(confirm) {
-  dialOpen = false;
-  dialEl.hidden = true;
-  if (document.activeElement) document.activeElement.blur();
-  const id = DIAL_FORMS[dialIndex];
-  if (confirm && id !== currentForm) {
-    currentForm = id;
-    player.setCharacter(id);
-  }
-}
-
-function handleDialKey(e, key) {
-  if (e.key.startsWith("Arrow") || key === " " || key === "enter")
-    e.preventDefault();
-  if (e.repeat) return;
-  if (key === "arrowleft" || key === "a") {
-    dialIndex = (dialIndex - 1 + DIAL_FORMS.length) % DIAL_FORMS.length;
-    renderDial();
-  } else if (key === "arrowright" || key === "d") {
-    dialIndex = (dialIndex + 1) % DIAL_FORMS.length;
-    renderDial();
-  } else if (key === "enter" || key === " " || DIAL_KEYS.includes(key)) {
-    closeDial(true);
-  } else if (key === "escape") {
-    closeDial(false);
-  }
-}
-
-buildDial();
 
 // ---------- Wandering Pokemon ----------
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -305,11 +224,23 @@ async function start() {
     }),
   );
 
-  // the name in flowers (nothing is drawn if the flower sprite is missing)
-  const flowerImg = await loadImage(TITLE_FLOWER_SRC);
-  const titleLayer = flowerImg ? buildTitleLayer(flowerImg) : null;
+  // the field: textured grass, the name in flowers, and flowers scattered around it
+  // (anything whose sprite is missing is just left out)
+  const titleImgs = (
+    await Promise.all(
+      TITLE_FLOWERS.map(async (f) => ({
+        img: await loadImage(f.src),
+        weight: f.weight,
+      })),
+    )
+  ).filter((f) => f.img);
+  const meadowImgs = (
+    await Promise.all(MEADOW_FLOWER_SRCS.map(loadImage))
+  ).filter(Boolean);
+  const grassLayer = buildGrassLayer();
+  const props = [...makeTitleProps(titleImgs), ...makeMeadowProps(meadowImgs)];
 
-  player = new Actor(currentForm, GAME_W / 2, 400);
+  player = new Actor(PLAYER_FORMS[formIndex], GAME_W / 2, 400);
   const wanderers = [
     makeWanderer(new Actor("cubone", 250, 300, WANDER_SPEED_FACTOR)),
     makeWanderer(new Actor("bulbasaur", 720, 320, WANDER_SPEED_FACTOR)),
@@ -324,13 +255,12 @@ async function start() {
     const { dx, dy } = readInput();
     player.step(dx, dy, dt);
     wanderers.forEach((w) => updateWanderer(w, dt));
+    props.forEach((p) => p.update(dt, actors));
 
-    ctx.fillStyle = GRASS_COLOUR;
-    ctx.fillRect(0, 0, GAME_W, GAME_H);
-    if (titleLayer) ctx.drawImage(titleLayer, 0, 0);
+    ctx.drawImage(grassLayer, 0, 0);
 
-    // draw further-back actors first so closer ones overlap them
-    [...actors].sort((a, b) => a.y - b.y).forEach((a) => a.draw(ctx));
+    // draw whatever is further up the screen first, so things lower down overlap it
+    [...props, ...actors].sort((a, b) => a.y - b.y).forEach((o) => o.draw(ctx));
 
     requestAnimationFrame(frame);
   }
