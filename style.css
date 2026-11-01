@@ -1,0 +1,20 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #1c2b1c;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The canvas keeps its internal 960x540 size; CSS only scales how it is shown. */
+canvas {
+  display: block;
+  width: min(100vw, calc(100vh * 16 / 9));
+  aspect-ratio: 16 / 9;
+  image-rendering: pixelated;
+}
