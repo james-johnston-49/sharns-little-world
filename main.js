@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------
 // Sharn's Little World: walking animation test
 // Arrow keys / WASD move the player in four directions (no diagonals).
-// Q or Shift switches the player between Clair and Bulbasaur (appearance only).
+// Q or Shift opens the transformation dial: pick a form, then confirm (appearance only).
 // Cubone and Bulbasaur wander on their own. Character details live in the data folder.
 // ---------------------------------------------------------------
 
@@ -13,8 +13,7 @@ const GRASS_COLOUR = "#5aa85a"; // placeholder for the open grass field
 const FOOT_PAD = 0.1; // fraction of each image's height that is empty space under the feet
 const FRAME_TIME = 0.15; // seconds each walk frame is shown
 const WANDER_SPEED_FACTOR = 0.5; // wandering Pokemon walk at this fraction of their normal speed
-const TRANSFORM_KEYS = ["q", "shift"]; // either key switches the player's form
-const PLAYER_FORMS = ["clair", "bulbasaur"]; // what Q cycles through (ids from the data folder)
+const DIAL_KEYS = ["q", "shift"]; // either key opens the transformation dial (and confirms a choice)
 const BOUNDS = { minX: 60, maxX: GAME_W - 60, minY: 170, maxY: GAME_H - 20 }; // limits for the feet position
 
 // Everything that can be drawn as a character, from data/trainer.js and data/pokemon.js
@@ -145,9 +144,16 @@ const DIR_KEYS = {
 const heldDirs = []; // held direction keys, most recently pressed last
 
 window.addEventListener("keydown", (e) => {
-  if (e.key.startsWith("Arrow")) e.preventDefault(); // stop the page scrolling
   const key = e.key.toLowerCase();
-  if (TRANSFORM_KEYS.includes(key) && !e.repeat) transformPlayer();
+  if (dialOpen) {
+    handleDialKey(e, key);
+    return;
+  }
+  if (e.key.startsWith("Arrow")) e.preventDefault(); // stop the page scrolling
+  if (DIAL_KEYS.includes(key) && !e.repeat) {
+    openDial();
+    return;
+  }
   if (key in DIR_KEYS && !heldDirs.includes(key)) heldDirs.push(key);
 });
 window.addEventListener("keyup", (e) => {
@@ -166,16 +172,95 @@ function readInput() {
   return { dx, dy };
 }
 
-// ---------- Transformation ----------
-let player = null;
-let formIndex = 0;
-
+// ---------- Transformation dial ----------
+// A small HTML overlay (see index.html and style.css). Open it, pick a form, confirm.
 // Only the player's appearance and speed change. The wandering Pokemon are not affected.
-function transformPlayer() {
-  if (!player) return;
-  formIndex = (formIndex + 1) % PLAYER_FORMS.length;
-  player.setCharacter(PLAYER_FORMS[formIndex]);
+let player = null;
+let currentForm = "clair"; // id of the form the player is in
+const DIAL_FORMS = Object.keys(CHARACTERS); // every character can be chosen for now
+let dialOpen = false;
+let dialIndex = 0;
+
+const dialEl = document.getElementById("dial");
+const dialList = document.getElementById("dial-list");
+
+// One card per form, using the character's front-facing sprite
+function buildDial() {
+  for (const id of DIAL_FORMS) {
+    const c = CHARACTERS[id];
+    const { base, standing } = c.sprites.normal;
+
+    const img = new Image();
+    img.src = standing ? `${base}-standing-front.png` : `${base}-front-1.png`;
+    img.alt = "";
+    img.addEventListener("load", () => {
+      // same relative size as in the game
+      img.style.width = `${img.naturalWidth * c.render.scale}px`;
+    });
+
+    const label = document.createElement("span");
+    label.textContent = c.name;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.tabIndex = -1; // the dial is driven by the keyboard handler below, not by tabbing
+    button.dataset.id = id;
+    button.append(img, label);
+    button.addEventListener("click", () => {
+      dialIndex = DIAL_FORMS.indexOf(id);
+      closeDial(true);
+    });
+
+    const item = document.createElement("li");
+    item.append(button);
+    dialList.append(item);
+  }
 }
+
+function renderDial() {
+  [...dialList.children].forEach((item, i) => {
+    item.firstElementChild.classList.toggle("selected", i === dialIndex);
+  });
+}
+
+function openDial() {
+  if (!player) return;
+  heldDirs.length = 0; // stop walking while the dial is open
+  dialIndex = DIAL_FORMS.indexOf(currentForm); // start on the current form
+  dialOpen = true;
+  dialEl.hidden = false;
+  renderDial();
+}
+
+function closeDial(confirm) {
+  dialOpen = false;
+  dialEl.hidden = true;
+  if (document.activeElement) document.activeElement.blur();
+  const id = DIAL_FORMS[dialIndex];
+  if (confirm && id !== currentForm) {
+    currentForm = id;
+    player.setCharacter(id);
+  }
+}
+
+function handleDialKey(e, key) {
+  if (e.key.startsWith("Arrow") || key === " " || key === "enter")
+    e.preventDefault();
+  if (e.repeat) return;
+  if (key === "arrowleft" || key === "a") {
+    dialIndex = (dialIndex - 1 + DIAL_FORMS.length) % DIAL_FORMS.length;
+    renderDial();
+  } else if (key === "arrowright" || key === "d") {
+    dialIndex = (dialIndex + 1) % DIAL_FORMS.length;
+    renderDial();
+  } else if (key === "enter" || key === " " || DIAL_KEYS.includes(key)) {
+    closeDial(true);
+  } else if (key === "escape") {
+    closeDial(false);
+  }
+}
+
+buildDial();
 
 // ---------- Wandering Pokemon ----------
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -220,7 +305,11 @@ async function start() {
     }),
   );
 
-  player = new Actor(PLAYER_FORMS[formIndex], GAME_W / 2, 400);
+  // the name in flowers (nothing is drawn if the flower sprite is missing)
+  const flowerImg = await loadImage(TITLE_FLOWER_SRC);
+  const titleLayer = flowerImg ? buildTitleLayer(flowerImg) : null;
+
+  player = new Actor(currentForm, GAME_W / 2, 400);
   const wanderers = [
     makeWanderer(new Actor("cubone", 250, 300, WANDER_SPEED_FACTOR)),
     makeWanderer(new Actor("bulbasaur", 720, 320, WANDER_SPEED_FACTOR)),
@@ -238,6 +327,7 @@ async function start() {
 
     ctx.fillStyle = GRASS_COLOUR;
     ctx.fillRect(0, 0, GAME_W, GAME_H);
+    if (titleLayer) ctx.drawImage(titleLayer, 0, 0);
 
     // draw further-back actors first so closer ones overlap them
     [...actors].sort((a, b) => a.y - b.y).forEach((a) => a.draw(ctx));
