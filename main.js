@@ -1,7 +1,8 @@
 // ---------------------------------------------------------------
 // Sharn's Little World: walking animation test
-// Arrow keys / WASD move the trainer in four directions (no diagonals).
-// Cubone and Bulbasaur wander on their own.
+// Arrow keys / WASD move the player in four directions (no diagonals).
+// Q switches the player between Clair and Bulbasaur (appearance only).
+// Cubone and Bulbasaur wander on their own. Character details live in the data folder.
 // ---------------------------------------------------------------
 
 const GAME_W = 960;
@@ -9,11 +10,14 @@ const GAME_H = 540;
 const GRASS_COLOUR = "#5aa85a"; // placeholder for the open grass field
 
 // Tuning knobs
-const SPRITE_SCALE = 0.5; // sprite files are large, so they are drawn at half size
 const FOOT_PAD = 0.1; // fraction of each image's height that is empty space under the feet
 const FRAME_TIME = 0.15; // seconds each walk frame is shown
-const PLAYER_SPEED = 200; // pixels per second
+const WANDER_SPEED_FACTOR = 0.5; // wandering Pokemon walk at this fraction of their normal speed
+const PLAYER_FORMS = ["clair", "bulbasaur"]; // what Q cycles through (ids from the data folder)
 const BOUNDS = { minX: 60, maxX: GAME_W - 60, minY: 170, maxY: GAME_H - 20 }; // limits for the feet position
+
+// Everything that can be drawn as a character, from data/trainer.js and data/pokemon.js
+const CHARACTERS = { ...TRAINERS, ...POKEMON };
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -57,15 +61,26 @@ async function loadSpriteSet(base, { hasStanding = false } = {}) {
   return set;
 }
 
+const spriteSets = {}; // loaded sprites, by character id (filled in by start)
+
 // ---------- Actor: anything that walks around ----------
 class Actor {
-  constructor(sprites, x, y, speed) {
-    this.sprites = sprites;
+  constructor(id, x, y, speedFactor = 1) {
+    this.speedFactor = speedFactor;
     this.x = x; // x and y are the position of the feet
     this.y = y;
-    this.speed = speed; // pixels per second
     this.dir = "down";
     this.moving = false;
+    this.animTime = 0;
+    this.setCharacter(id);
+  }
+
+  // Changes what this actor looks like and how fast it walks. Position and facing are kept.
+  setCharacter(id) {
+    const c = CHARACTERS[id];
+    this.sprites = spriteSets[id];
+    this.scale = c.scale;
+    this.speed = c.speed * this.speedFactor; // pixels per second
     this.animTime = 0;
   }
 
@@ -95,8 +110,8 @@ class Actor {
       : this.sprites.idle[this.dir];
     if (!img) return;
 
-    const w = img.width * SPRITE_SCALE;
-    const h = img.height * SPRITE_SCALE;
+    const w = img.width * this.scale;
+    const h = img.height * this.scale;
 
     // simple shadow under the feet
     ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
@@ -131,6 +146,7 @@ const heldDirs = []; // held direction keys, most recently pressed last
 window.addEventListener("keydown", (e) => {
   if (e.key.startsWith("Arrow")) e.preventDefault(); // stop the page scrolling
   const key = e.key.toLowerCase();
+  if (key === "q" && !e.repeat) transformPlayer();
   if (key in DIR_KEYS && !heldDirs.includes(key)) heldDirs.push(key);
 });
 window.addEventListener("keyup", (e) => {
@@ -147,6 +163,17 @@ function readInput() {
   if (!key) return { dx: 0, dy: 0 };
   const [dx, dy] = DIR_KEYS[key];
   return { dx, dy };
+}
+
+// ---------- Transformation ----------
+let player = null;
+let formIndex = 0;
+
+// Only the player's appearance and speed change. The wandering Pokemon are not affected.
+function transformPlayer() {
+  if (!player) return;
+  formIndex = (formIndex + 1) % PLAYER_FORMS.length;
+  player.setCharacter(PLAYER_FORMS[formIndex]);
 }
 
 // ---------- Wandering Pokemon ----------
@@ -183,16 +210,19 @@ function updateWanderer(w, dt) {
 
 // ---------- Start ----------
 async function start() {
-  const [clair, cubone, bulbasaur] = await Promise.all([
-    loadSpriteSet("assets/sprites/trainer/clair", { hasStanding: true }),
-    loadSpriteSet("assets/sprites/pokemon/cubone/cubone"),
-    loadSpriteSet("assets/sprites/pokemon/bulbasaur/bulbasaur"),
-  ]);
+  // load every character listed in the data folder
+  await Promise.all(
+    Object.entries(CHARACTERS).map(async ([id, c]) => {
+      spriteSets[id] = await loadSpriteSet(c.base, {
+        hasStanding: c.hasStanding,
+      });
+    }),
+  );
 
-  const player = new Actor(clair, GAME_W / 2, 400, PLAYER_SPEED);
+  player = new Actor(PLAYER_FORMS[formIndex], GAME_W / 2, 400);
   const wanderers = [
-    makeWanderer(new Actor(cubone, 250, 300, 80)),
-    makeWanderer(new Actor(bulbasaur, 720, 320, 70)),
+    makeWanderer(new Actor("cubone", 250, 300, WANDER_SPEED_FACTOR)),
+    makeWanderer(new Actor("bulbasaur", 720, 320, WANDER_SPEED_FACTOR)),
   ];
   const actors = [player, ...wanderers.map((w) => w.actor)];
 
