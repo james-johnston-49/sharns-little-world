@@ -1,18 +1,29 @@
 // ---------------------------------------------------------------
 // Trainer data: one entry per human character.
+// Same shape as the Pokemon entries in pokemon.js, minus the Pokemon-only fields.
 // ---------------------------------------------------------------
-//
-// base         path to the sprites, without the "-front-1.png" ending
-// hasStanding  true if there are standing poses (clair-standing-front.png, ...)
-// speed        walking speed in pixels per second
-// scale        how large the sprite is drawn (1 = the file's own size)
 
 const TRAINERS = {
   clair: {
+    id: "clair",
     name: "Clair",
-    base: "assets/sprites/trainer/clair",
-    hasStanding: true,
-    speed: 200,
-    scale: 0.5,
+
+    // Sprite assets
+    sprites: {
+      normal: {
+        base: "assets/sprites/trainer/clair",
+        standing: true, // has standing poses (clair-standing-front.png, ...)
+      },
+    },
+
+    // Movement
+    movement: {
+      speed: 200,
+    },
+
+    // Rendering
+    render: {
+      scale: 0.5,
+    },
   },
 };

@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------
 // Sharn's Little World: walking animation test
 // Arrow keys / WASD move the player in four directions (no diagonals).
-// Q switches the player between Clair and Bulbasaur (appearance only).
+// Q or Shift switches the player between Clair and Bulbasaur (appearance only).
 // Cubone and Bulbasaur wander on their own. Character details live in the data folder.
 // ---------------------------------------------------------------
 
@@ -13,6 +13,7 @@ const GRASS_COLOUR = "#5aa85a"; // placeholder for the open grass field
 const FOOT_PAD = 0.1; // fraction of each image's height that is empty space under the feet
 const FRAME_TIME = 0.15; // seconds each walk frame is shown
 const WANDER_SPEED_FACTOR = 0.5; // wandering Pokemon walk at this fraction of their normal speed
+const TRANSFORM_KEYS = ["q", "shift"]; // either key switches the player's form
 const PLAYER_FORMS = ["clair", "bulbasaur"]; // what Q cycles through (ids from the data folder)
 const BOUNDS = { minX: 60, maxX: GAME_W - 60, minY: 170, maxY: GAME_H - 20 }; // limits for the feet position
 
@@ -79,8 +80,8 @@ class Actor {
   setCharacter(id) {
     const c = CHARACTERS[id];
     this.sprites = spriteSets[id];
-    this.scale = c.scale;
-    this.speed = c.speed * this.speedFactor; // pixels per second
+    this.scale = c.render.scale;
+    this.speed = c.movement.speed * this.speedFactor; // pixels per second
     this.animTime = 0;
   }
 
@@ -146,7 +147,7 @@ const heldDirs = []; // held direction keys, most recently pressed last
 window.addEventListener("keydown", (e) => {
   if (e.key.startsWith("Arrow")) e.preventDefault(); // stop the page scrolling
   const key = e.key.toLowerCase();
-  if (key === "q" && !e.repeat) transformPlayer();
+  if (TRANSFORM_KEYS.includes(key) && !e.repeat) transformPlayer();
   if (key in DIR_KEYS && !heldDirs.includes(key)) heldDirs.push(key);
 });
 window.addEventListener("keyup", (e) => {
@@ -213,8 +214,8 @@ async function start() {
   // load every character listed in the data folder
   await Promise.all(
     Object.entries(CHARACTERS).map(async ([id, c]) => {
-      spriteSets[id] = await loadSpriteSet(c.base, {
-        hasStanding: c.hasStanding,
+      spriteSets[id] = await loadSpriteSet(c.sprites.normal.base, {
+        hasStanding: c.sprites.normal.standing,
       });
     }),
   );
