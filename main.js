@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------
 // Sharn's Little World: walking animation test
-// Arrow keys / WASD move the trainer. Cubone and Bulbasaur wander.
+// Arrow keys / WASD move the trainer in four directions (no diagonals).
+// Cubone and Bulbasaur wander on their own.
 // ---------------------------------------------------------------
 
 const GAME_W = 960;
@@ -11,6 +12,7 @@ const GRASS_COLOUR = "#5aa85a"; // placeholder for the open grass field
 const SPRITE_SCALE = 0.5; // sprite files are large, so they are drawn at half size
 const FOOT_PAD = 0.1; // fraction of each image's height that is empty space under the feet
 const FRAME_TIME = 0.15; // seconds each walk frame is shown
+const PLAYER_SPEED = 200; // pixels per second
 const BOUNDS = { minX: 60, maxX: GAME_W - 60, minY: 170, maxY: GAME_H - 20 }; // limits for the feet position
 
 const canvas = document.getElementById("game");
@@ -74,7 +76,7 @@ class Actor {
       this.animTime = 0;
       return;
     }
-    const len = Math.hypot(dx, dy); // so diagonals aren't faster
+    const len = Math.hypot(dx, dy);
     this.x += (dx / len) * this.speed * dt;
     this.y += (dy / len) * this.speed * dt;
     this.x = Math.min(Math.max(this.x, BOUNDS.minX), BOUNDS.maxX);
@@ -113,21 +115,38 @@ class Actor {
   }
 }
 
-// ---------- Player input ----------
-const keys = new Set();
+// ---------- Player input (4-directional) ----------
+const DIR_KEYS = {
+  arrowleft: [-1, 0],
+  a: [-1, 0],
+  arrowright: [1, 0],
+  d: [1, 0],
+  arrowup: [0, -1],
+  w: [0, -1],
+  arrowdown: [0, 1],
+  s: [0, 1],
+};
+const heldDirs = []; // held direction keys, most recently pressed last
+
 window.addEventListener("keydown", (e) => {
   if (e.key.startsWith("Arrow")) e.preventDefault(); // stop the page scrolling
-  keys.add(e.key.toLowerCase());
+  const key = e.key.toLowerCase();
+  if (key in DIR_KEYS && !heldDirs.includes(key)) heldDirs.push(key);
 });
-window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
-window.addEventListener("blur", () => keys.clear());
+window.addEventListener("keyup", (e) => {
+  const i = heldDirs.indexOf(e.key.toLowerCase());
+  if (i !== -1) heldDirs.splice(i, 1);
+});
+window.addEventListener("blur", () => {
+  heldDirs.length = 0;
+});
 
+// The newest held key wins, so tapping a new direction while holding another switches to it
 function readInput() {
-  const left = keys.has("arrowleft") || keys.has("a");
-  const right = keys.has("arrowright") || keys.has("d");
-  const up = keys.has("arrowup") || keys.has("w");
-  const down = keys.has("arrowdown") || keys.has("s");
-  return { dx: Number(right) - Number(left), dy: Number(down) - Number(up) };
+  const key = heldDirs[heldDirs.length - 1];
+  if (!key) return { dx: 0, dy: 0 };
+  const [dx, dy] = DIR_KEYS[key];
+  return { dx, dy };
 }
 
 // ---------- Wandering Pokemon ----------
@@ -170,7 +189,7 @@ async function start() {
     loadSpriteSet("assets/sprites/pokemon/bulbasaur/bulbasaur"),
   ]);
 
-  const player = new Actor(clair, GAME_W / 2, 400, 200);
+  const player = new Actor(clair, GAME_W / 2, 400, PLAYER_SPEED);
   const wanderers = [
     makeWanderer(new Actor(cubone, 250, 300, 80)),
     makeWanderer(new Actor(bulbasaur, 720, 320, 70)),
