@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------
 
 const GAME_W = 960;
-const GAME_H = 540;
+const GAME_H = 600; // 16:10, wide but not as thin as 16:9, so dark bars stay small in most windows
 const GRASS_COLOUR = "#5aa85a"; // placeholder for the open grass field
 
 // Tuning knobs
@@ -15,12 +15,22 @@ const FRAME_TIME = 0.15; // seconds each walk frame is shown
 const WANDER_SPEED_FACTOR = 0.5; // wandering Pokemon walk at this fraction of their normal speed
 const TRANSFORM_KEYS = ["q"]; // either key switches the player's form
 const PLAYER_FORMS = ["clair", "bulbasaur"]; // what the key cycles through (ids from the data folder)
-const BOUNDS = { minX: 60, maxX: GAME_W - 60, minY: 170, maxY: GAME_H - 20 }; // limits for the feet position
+const WALL_X = 60; // feet stop this far from a side edge...
+const EXIT_EDGE = 20; // ...unless that side has an exit, then they can walk this close to it
+const MIN_Y = 100; // highest the feet can go (the trainer's sprite has empty space above her head, so her head reaches the top edge)
+const MAX_Y = GAME_H - 20; // lowest the feet can go
+const ARRIVE_INSET = 30; // how far in from the edge you appear after changing map
+const FADE_TIME = 0.35; // seconds to fade out (and again to fade in) when changing map
 
 // Everything that can be drawn as a character, from data/trainer.js and data/pokemon.js
 const CHARACTERS = { ...TRAINERS, ...POKEMON };
 
 const canvas = document.getElementById("game");
+// the game's size is set here (GAME_W / GAME_H), then CSS-scaled to fit the window
+canvas.width = GAME_W;
+canvas.height = GAME_H;
+canvas.style.width = `min(100vw, calc(100vh * ${GAME_W} / ${GAME_H}))`;
+canvas.style.aspectRatio = `${GAME_W} / ${GAME_H}`;
 const ctx = canvas.getContext("2d");
 ctx.imageSmoothingEnabled = false; // keep pixel art crisp
 
@@ -95,8 +105,8 @@ class Actor {
     const len = Math.hypot(dx, dy);
     this.x += (dx / len) * this.speed * dt;
     this.y += (dy / len) * this.speed * dt;
-    this.x = Math.min(Math.max(this.x, BOUNDS.minX), BOUNDS.maxX);
-    this.y = Math.min(Math.max(this.y, BOUNDS.minY), BOUNDS.maxY);
+    this.x = Math.min(Math.max(this.x, bounds.minX), bounds.maxX);
+    this.y = Math.min(Math.max(this.y, bounds.minY), bounds.maxY);
 
     if (Math.abs(dx) > Math.abs(dy)) this.dir = dx < 0 ? "left" : "right";
     else this.dir = dy < 0 ? "up" : "down";
@@ -213,6 +223,79 @@ function updateWanderer(w, dt) {
   if (w.walking && w.actor.x === x && w.actor.y === y) w.timer = 0;
 }
 
+// ---------- Maps ----------
+// The current map's walking limits (feet position). Changes with each map, see boundsFor.
+let bounds = { minX: WALL_X, maxX: GAME_W - WALL_X, minY: MIN_Y, maxY: MAX_Y };
+
+// A side with an exit is open almost to the screen edge, so you can walk off it
+function boundsFor(def) {
+  const exits = def.exits || {};
+  return {
+    minX: exits.left ? EXIT_EDGE : WALL_X,
+    maxX: GAME_W - (exits.right ? EXIT_EDGE : WALL_X),
+    minY: MIN_Y,
+    maxY: MAX_Y,
+  };
+}
+
+let titleImgs = []; // loaded once in start
+let meadowImgs = [];
+const builtMaps = {}; // grass and flowers per map id, built the first time you visit
+let currentMap = null; // { def, grassLayer, props }
+let wanderers = [];
+let actors = [];
+
+function getMap(id) {
+  if (!builtMaps[id]) {
+    const def = MAPS[id];
+    builtMaps[id] = {
+      def,
+      grassLayer: buildGrassLayer(def.grassSeed),
+      props: [
+        ...(def.title ? makeTitleProps(titleImgs) : []),
+        ...makeMeadowProps(meadowImgs, {
+          seed: def.flowerSeed,
+          avoidTitle: def.title,
+        }),
+      ],
+    };
+  }
+  return builtMaps[id];
+}
+
+// side: the edge the player just walked off ("left" or "right"); leave it out for the very first map
+function enterMap(id, side) {
+  currentMap = getMap(id);
+  const def = currentMap.def;
+  bounds = boundsFor(def);
+
+  wanderers = (def.wanderers || []).map(([charId, x, y]) =>
+    makeWanderer(new Actor(charId, x, y, WANDER_SPEED_FACTOR)),
+  );
+  actors = [player, ...wanderers.map((w) => w.actor)];
+
+  if (side === "right") player.x = bounds.minX + ARRIVE_INSET; // walked off the right, so appear on the left
+  else if (side === "left") player.x = bounds.maxX - ARRIVE_INSET;
+  else {
+    player.x = def.start.x;
+    player.y = def.start.y;
+  }
+  player.y = Math.min(Math.max(player.y, bounds.minY), bounds.maxY);
+}
+
+// ---------- Changing map ----------
+let fade = 0; // 0 = clear, 1 = fully black
+let pending = null; // { id, side } while fading out to the next map
+
+// Walking into an open edge that has an exit starts the change
+function checkExit(dx) {
+  const exits = currentMap.def.exits || {};
+  if (dx > 0 && exits.right && player.x >= bounds.maxX)
+    pending = { id: exits.right, side: "right" };
+  else if (dx < 0 && exits.left && player.x <= bounds.minX)
+    pending = { id: exits.left, side: "left" };
+}
+
 // ---------- Start ----------
 async function start() {
   // load every character listed in the data folder
@@ -224,9 +307,9 @@ async function start() {
     }),
   );
 
-  // the field: textured grass, the name in flowers, and flowers scattered around it
+  // flower sprites, loaded once and shared by every map
   // (anything whose sprite is missing is just left out)
-  const titleImgs = (
+  titleImgs = (
     await Promise.all(
       TITLE_FLOWERS.map(async (f) => ({
         img: await loadImage(f.src),
@@ -234,33 +317,48 @@ async function start() {
       })),
     )
   ).filter((f) => f.img);
-  const meadowImgs = (
-    await Promise.all(MEADOW_FLOWER_SRCS.map(loadImage))
-  ).filter(Boolean);
-  const grassLayer = buildGrassLayer();
-  const props = [...makeTitleProps(titleImgs), ...makeMeadowProps(meadowImgs)];
+  meadowImgs = (await Promise.all(MEADOW_FLOWER_SRCS.map(loadImage))).filter(
+    Boolean,
+  );
 
-  player = new Actor(PLAYER_FORMS[formIndex], GAME_W / 2, 400);
-  const wanderers = [
-    makeWanderer(new Actor("cubone", 250, 300, WANDER_SPEED_FACTOR)),
-    makeWanderer(new Actor("bulbasaur", 720, 320, WANDER_SPEED_FACTOR)),
-  ];
-  const actors = [player, ...wanderers.map((w) => w.actor)];
+  player = new Actor(PLAYER_FORMS[formIndex], 0, 0);
+  enterMap(START_MAP);
 
   let last = performance.now();
   function frame(now) {
     const dt = Math.min((now - last) / 1000, 0.05); // cap so a background tab doesn't cause a huge jump
     last = now;
 
-    const { dx, dy } = readInput();
+    // no walking while the screen is fading to the next map
+    const { dx, dy } = pending ? { dx: 0, dy: 0 } : readInput();
     player.step(dx, dy, dt);
-    wanderers.forEach((w) => updateWanderer(w, dt));
-    props.forEach((p) => p.update(dt, actors));
+    if (!pending) checkExit(dx);
 
-    ctx.drawImage(grassLayer, 0, 0);
+    wanderers.forEach((w) => updateWanderer(w, dt));
+    currentMap.props.forEach((p) => p.update(dt, actors));
+
+    // fade out, swap the map while the screen is black, then fade back in
+    if (pending) {
+      fade = Math.min(1, fade + dt / FADE_TIME);
+      if (fade >= 1) {
+        enterMap(pending.id, pending.side);
+        pending = null;
+      }
+    } else if (fade > 0) {
+      fade = Math.max(0, fade - dt / FADE_TIME);
+    }
+
+    ctx.drawImage(currentMap.grassLayer, 0, 0);
 
     // draw whatever is further up the screen first, so things lower down overlap it
-    [...props, ...actors].sort((a, b) => a.y - b.y).forEach((o) => o.draw(ctx));
+    [...currentMap.props, ...actors]
+      .sort((a, b) => a.y - b.y)
+      .forEach((o) => o.draw(ctx));
+
+    if (fade > 0) {
+      ctx.fillStyle = `rgba(0, 0, 0, ${fade})`;
+      ctx.fillRect(0, 0, GAME_W, GAME_H);
+    }
 
     requestAnimationFrame(frame);
   }

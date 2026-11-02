@@ -20,7 +20,7 @@ const TITLE_SIZE_VARIATION = 0.2; // how much sizes vary (0.2 = from 20% smaller
 const TITLE_FLOWERS_PER_CELL = 4; // flowers piled onto each spot; more means lusher
 const TITLE_SPREAD = 0.5; // how far they scatter from the spot (fraction of a cell); more means wider strokes
 const TITLE_SPILL = 0; // chance of stray flowers beside each stroke (0 = clean edges; they made the letters harder to read)
-const TITLE_CENTRE_Y = 250; // vertical middle of the title, in game pixels
+const TITLE_CENTRE_Y = 285; // vertical middle of the title, in game pixels
 const TITLE_SEED = 7; // change for a different (but still fixed) scatter
 
 // Each letter is 5 spots wide and 7 tall. # = a flower goes here.

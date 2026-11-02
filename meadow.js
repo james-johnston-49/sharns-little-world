@@ -15,12 +15,12 @@ const MEADOW_FLOWER_SRCS = [
 ];
 
 // Tuning knobs
-const MEADOW_COUNT = 60; // how many flowers to scatter
+const MEADOW_COUNT = 66; // how many flowers to scatter
 const MEADOW_FLOWER_SIZE = 32; // drawn width of a scattered flower (the files are 32 wide, so 32 keeps pixels even)
 const MEADOW_MIN_GAP = 46; // closest two scattered flowers may be
 const MEADOW_TITLE_MARGIN = 26; // clear space kept around the title
 const MEADOW_SEED = 11; // change for a different (but still fixed) scatter
-const GRASS_TUFT_COUNT = 520; // how many little grass tufts are painted
+const GRASS_TUFT_COUNT = 580; // how many little grass tufts are painted
 const PROP_FOOT_PAD = 0.06; // fraction of a flower sprite's height that is empty space under its base
 const PROP_FADE_ALPHA = 0.7; // how see-through a flower becomes while it covers a character (1 = never fades)
 const PROP_FADE_SPEED = 10; // how quickly flowers fade in and out
@@ -95,13 +95,13 @@ class Prop {
 
 // ---------- Grass ----------
 // A canvas the size of the game with soft light and dark patches and lots of small tufts
-function buildGrassLayer() {
+function buildGrassLayer(seed = 3) {
   const layer = document.createElement("canvas");
   layer.width = GAME_W;
   layer.height = GAME_H;
   const g = layer.getContext("2d");
   g.imageSmoothingEnabled = false;
-  const rand = seededRandom(3);
+  const rand = seededRandom(seed);
 
   g.fillStyle = GRASS_COLOUR;
   g.fillRect(0, 0, GAME_W, GAME_H);
@@ -162,11 +162,16 @@ function buildGrassLayer() {
 
 // ---------- Scattered flowers ----------
 // images: loaded flower images. Returns an array of Props.
-function makeMeadowProps(images) {
+// seed: different numbers give different (but fixed) scatters.
+// avoidTitle: keep the flowers clear of the name (only the landing map has one).
+function makeMeadowProps(
+  images,
+  { seed = MEADOW_SEED, avoidTitle = false } = {},
+) {
   if (images.length === 0) return [];
-  const rand = seededRandom(MEADOW_SEED);
-  const title = titleBounds();
-  const clear = {
+  const rand = seededRandom(seed);
+  const title = avoidTitle ? titleBounds() : null;
+  const clear = title && {
     left: title.x - MEADOW_TITLE_MARGIN,
     right: title.x + title.w + MEADOW_TITLE_MARGIN,
     top: title.y - MEADOW_TITLE_MARGIN,
@@ -185,6 +190,7 @@ function makeMeadowProps(images) {
     const topOfFlower = y - MEADOW_FLOWER_SIZE;
     // keep the title readable: skip anything that would overlap its area
     if (
+      clear &&
       x + half > clear.left &&
       x - half < clear.right &&
       y > clear.top &&

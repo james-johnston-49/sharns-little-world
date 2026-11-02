@@ -11,10 +11,9 @@ body {
   justify-content: center;
 }
 
-/* The canvas keeps its internal 960x540 size; CSS only scales how it is shown. */
+/* The canvas keeps its internal size (set from GAME_W / GAME_H in main.js);
+   main.js also scales how it is shown so it fits the window. */
 canvas {
   display: block;
-  width: min(100vw, calc(100vh * 16 / 9));
-  aspect-ratio: 16 / 9;
   image-rendering: pixelated;
 }
