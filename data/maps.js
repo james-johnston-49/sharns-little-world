@@ -1,18 +1,19 @@
 // ---------------------------------------------------------------
-// Maps: one entry per screen the player can walk around.
-// To add a new one, add a row here and point an exit at it.
-// ---------------------------------------------------------------
+// Maps: one entry per screen. To add one, add an entry here and
+// point an exit from another map at it.
 //
-// grassSeed    change for a different (but fixed) grass pattern
-// flowerSeed   change for a different (but fixed) flower scatter
-// title        true puts the name in flowers on this map
-// start        where the player first appears (only used for START_MAP)
-// wanderers    Pokemon that roam on their own: [id, x, y]
-// exits        walking off an edge leads to another map: { right: "map-id", left: "map-id" }
+//   grassSeed    changes the grass pattern
+//   flowerSeed   changes the flower scatter
+//   title        true shows the name in flowers
+//   start        player's first position (START_MAP only)
+//   wanderers    roaming Pokemon, as [id, x, y]
+//   exits        { left: "map-id", right: "map-id" } (only these two so far)
+// ---------------------------------------------------------------
 
 const START_MAP = "landing";
 
 const MAPS = {
+  // Landing page: Sharn spelled out in flowers
   landing: {
     grassSeed: 3,
     flowerSeed: 11,
@@ -25,7 +26,7 @@ const MAPS = {
     exits: { right: "garden" },
   },
 
-  // placeholder for the first real map
+  // Placeholder for the first real map
   garden: {
     grassSeed: 8,
     flowerSeed: 23,

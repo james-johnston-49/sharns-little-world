@@ -1,17 +1,18 @@
 // ---------------------------------------------------------------
-// Pokemon data: one entry per Pokemon.
-// To add a new one, drop its sprites in assets/sprites/pokemon/<name>/ using the
-// same file naming (name-front-1.png, name-left-2.png, ...) and add an entry here.
-// ---------------------------------------------------------------
+// Pokemon: one entry per Pokemon. To add one, put its sprites in
+// assets/sprites/pokemon/<name>/ (same file naming as the others)
+// and add an entry below.
 //
-// The game reads these today:
-//   sprites.normal.base      path to the sprites, without the "-front-1.png" ending
-//   sprites.normal.standing  true if there are standing poses (the Pokemon so far have none)
-//   movement.speed           walking speed in pixels per second
-//   render.scale             how large the sprite is drawn (1 = the file's own size)
-//   name                     display name
-// Everything else is stored for later and not used yet.
-// The key (bulbasaur) is what the code uses to find a Pokemon, so keep id the same as it.
+// Used by the game:
+//   sprites.normal.base      sprite path, without "-front-1.png"
+//   sprites.normal.standing  true if it has standing poses
+//   movement.speed           pixels per second
+//   render.scale             sprite size (1 = file's own size)
+//
+// Stored for later: id, name, types, category, sprites.shiny, moves, evolution
+//
+// Keep id the same as the key (e.g. bulbasaur): the code looks Pokemon up by key.
+// ---------------------------------------------------------------
 
 const POKEMON = {
   bulbasaur: {
@@ -20,15 +21,15 @@ const POKEMON = {
 
     // Classification
     types: ["grass", "poison"],
-    category: "james-favourites",
+    category: "james-favourites", // e.g. "starter", "james-favourites"
 
-    // Sprite assets
+    // Sprites
     sprites: {
       normal: {
         base: "assets/sprites/pokemon/bulbasaur/bulbasaur",
         standing: false,
       },
-      shiny: null,
+      shiny: null, // None yet
     },
 
     // Movement
@@ -50,9 +51,11 @@ const POKEMON = {
     id: "cubone",
     name: "Cubone",
 
+    // Classification
     types: ["ground"],
     category: "starter",
 
+    // Sprites
     sprites: {
       normal: {
         base: "assets/sprites/pokemon/cubone/cubone",
@@ -61,14 +64,17 @@ const POKEMON = {
       shiny: null,
     },
 
+    // Movement
     movement: {
       speed: 160,
     },
 
+    // Rendering
     render: {
       scale: 0.5,
     },
 
+    // Gameplay (future)
     moves: [],
     evolution: null,
   },

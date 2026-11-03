@@ -1,3 +1,4 @@
+/* Dark green page, canvas centred */
 html,
 body {
   margin: 0;
@@ -11,8 +12,7 @@ body {
   justify-content: center;
 }
 
-/* The canvas keeps its internal size (set from GAME_W / GAME_H in main.js);
-   main.js also scales how it is shown so it fits the window. */
+/* main.js sets the size; pixelated keeps the art sharp when scaled up */
 canvas {
   display: block;
   image-rendering: pixelated;

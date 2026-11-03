@@ -1,44 +1,65 @@
 // ---------------------------------------------------------------
-// Sharn's Little World: walking animation test
-// Arrow keys / WASD move the player in four directions (no diagonals).
-// Q or Shift switches the player between Clair and Bulbasaur (appearance only).
-// Cubone and Bulbasaur wander on their own. Character details live in the data folder.
+// Sharn's Little World: main game file
+//
+// Controls
+//   Arrow keys / WASD   walk (4 directions, no diagonals)
+//   Q                   cycle the player's form (appearance only)
+//
+// Contents: sprite loading, Actor, input, transforming, wandering,
+// maps, then start() and the game loop.
+// Other files: data/ (characters, maps), meadow.js (grass, flowers),
+// title.js (name in flowers).
 // ---------------------------------------------------------------
 
+
+// 16:10 SCREEN SIZE
 const GAME_W = 960;
-const GAME_H = 600; // 16:10, wide but not as thin as 16:9, so dark bars stay small in most windows
-const GRASS_COLOUR = "#5aa85a"; // placeholder for the open grass field
+const GAME_H = 600;
+const GRASS_COLOUR = "#5aa85a"; // Base grass (meadow.js paints over it)
 
-// Tuning knobs
-const FOOT_PAD = 0.1; // fraction of each image's height that is empty space under the feet
-const FRAME_TIME = 0.15; // seconds each walk frame is shown
-const WANDER_SPEED_FACTOR = 0.5; // wandering Pokemon walk at this fraction of their normal speed
-const TRANSFORM_KEYS = ["q"]; // either key switches the player's form
-const PLAYER_FORMS = ["clair", "bulbasaur"]; // what the key cycles through (ids from the data folder)
-const WALL_X = 60; // feet stop this far from a side edge...
-const EXIT_EDGE = 20; // ...unless that side has an exit, then they can walk this close to it
-const MIN_Y = 100; // highest the feet can go (the trainer's sprite has empty space above her head, so her head reaches the top edge)
-const MAX_Y = GAME_H - 20; // lowest the feet can go
-const ARRIVE_INSET = 30; // how far in from the edge you appear after changing map
-const FADE_TIME = 0.35; // seconds to fade out (and again to fade in) when changing map
 
-// Everything that can be drawn as a character, from data/trainer.js and data/pokemon.js
+// ANIMATION
+const FOOT_PAD = 0.1; // Empty share of a sprite's height under the feet
+const FRAME_TIME = 0.15; // Seconds per walk frame
+
+
+// CHARACTERS
+const WANDER_SPEED_FACTOR = 0.5; // Wanderers walk at this share of normal speed
+const TRANSFORM_KEYS = ["q"]; // Keys that change the player's form
+const PLAYER_FORMS = ["clair", "bulbasaur",  "cubone"]; // Forms the key cycles through (ids from data/)
+
+
+// WALKING LIMITS (feet position, game pixels)
+const WALL_X = 60; // Distance feet stay from a side edge...
+const EXIT_EDGE = 20; // ...or from an edge with an exit
+const MIN_Y = 120; // Highest the feet go (the trainer sprite has empty space above her head)
+const MAX_Y = GAME_H - 20; // Lowest the feet go
+
+
+// CHANGING MAP
+const ARRIVE_INSET = 30; // How far in from the edge the player appears
+const FADE_TIME = 0.35; // Seconds to fade out, and again to fade in
+
+
+// All drawable characters by id (data/trainer.js and data/pokemon.js)
 const CHARACTERS = { ...TRAINERS, ...POKEMON };
 
 const canvas = document.getElementById("game");
-// the game's size is set here (GAME_W / GAME_H), then CSS-scaled to fit the window
+// Draw at the internal size, then scale to fit the window
 canvas.width = GAME_W;
 canvas.height = GAME_H;
 canvas.style.width = `min(100vw, calc(100vh * ${GAME_W} / ${GAME_H}))`;
 canvas.style.aspectRatio = `${GAME_W} / ${GAME_H}`;
 const ctx = canvas.getContext("2d");
-ctx.imageSmoothingEnabled = false; // keep pixel art crisp
+ctx.imageSmoothingEnabled = false; // Keep pixel art crisp
+
 
 // ---------- Sprite loading ----------
-// Game direction -> the word used in the file names
+// Game direction -> file name word (e.g. "down" uses cubone-front-1.png)
 const FILE_DIR = { down: "front", up: "back", left: "left", right: "right" };
 const DIRS = Object.keys(FILE_DIR);
 
+// Loads an image. Gives null if the file is missing, so one bad sprite doesn't stop the game.
 function loadImage(src) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -51,9 +72,9 @@ function loadImage(src) {
   });
 }
 
-// Builds { idle: {dir: image}, walk: {dir: [images]} } for one character.
-// Pokemon have two walk frames per direction, so they alternate 1, 2.
-// The trainer also has standing poses, so her cycle is step, stand, step, stand.
+// Loads one character's sprites: { idle: { dir: image }, walk: { dir: [images] } }
+// Pokemon alternate two walk frames. The trainer also has standing poses:
+// step, stand, step, stand.
 async function loadSpriteSet(base, { hasStanding = false } = {}) {
   const set = { idle: {}, walk: {} };
   for (const dir of DIRS) {
@@ -61,6 +82,7 @@ async function loadSpriteSet(base, { hasStanding = false } = {}) {
     const step1 = await loadImage(`${base}-${f}-1.png`);
     const step2 = await loadImage(`${base}-${f}-2.png`);
     if (hasStanding) {
+      // Use step1 if the standing pose is missing
       const stand = (await loadImage(`${base}-standing-${f}.png`)) || step1;
       set.idle[dir] = stand;
       set.walk[dir] = [step1, stand, step2, stand];
@@ -72,42 +94,47 @@ async function loadSpriteSet(base, { hasStanding = false } = {}) {
   return set;
 }
 
-const spriteSets = {}; // loaded sprites, by character id (filled in by start)
+const spriteSets = {}; // By character id (filled in by start())
 
-// ---------- Actor: anything that walks around ----------
+
+// ---------- Actor: anything that walks ----------
+// The player and every wandering Pokemon.
 class Actor {
   constructor(id, x, y, speedFactor = 1) {
-    this.speedFactor = speedFactor;
-    this.x = x; // x and y are the position of the feet
+    this.speedFactor = speedFactor; // 1 = normal speed
+    this.x = x; // Position of the feet
     this.y = y;
-    this.dir = "down";
-    this.moving = false;
-    this.animTime = 0;
+    this.dir = "down"; // Facing: down, up, left or right
+    this.moving = false; // Walking (walk frames) or idle
+    this.animTime = 0; // Seconds spent walking
     this.setCharacter(id);
   }
 
-  // Changes what this actor looks like and how fast it walks. Position and facing are kept.
+  // Changes look and speed. Position and facing are kept.
   setCharacter(id) {
     const c = CHARACTERS[id];
     this.sprites = spriteSets[id];
     this.scale = c.render.scale;
-    this.speed = c.movement.speed * this.speedFactor; // pixels per second
+    this.speed = c.movement.speed * this.speedFactor; // Pixels per second
     this.animTime = 0;
   }
 
-  // dx, dy are the intended direction (-1, 0 or 1 on each axis)
+  // Moves for one frame. dx, dy: direction (-1, 0 or 1); dt: seconds since last frame.
   step(dx, dy, dt) {
     this.moving = dx !== 0 || dy !== 0;
     if (!this.moving) {
       this.animTime = 0;
       return;
     }
+    // Normalise so diagonals wouldn't be faster (unused: input is 4-directional)
     const len = Math.hypot(dx, dy);
     this.x += (dx / len) * this.speed * dt;
     this.y += (dy / len) * this.speed * dt;
+    // Stay within the map's limits
     this.x = Math.min(Math.max(this.x, bounds.minX), bounds.maxX);
     this.y = Math.min(Math.max(this.y, bounds.minY), bounds.maxY);
 
+    // Face the bigger movement
     if (Math.abs(dx) > Math.abs(dy)) this.dir = dx < 0 ? "left" : "right";
     else this.dir = dy < 0 ? "up" : "down";
 
@@ -115,27 +142,29 @@ class Actor {
   }
 
   draw(ctx) {
+    // Walk frame while moving, idle pose otherwise
     const frames = this.sprites.walk[this.dir];
     const img = this.moving
       ? frames[Math.floor(this.animTime / FRAME_TIME) % frames.length]
       : this.sprites.idle[this.dir];
-    if (!img) return;
+    if (!img) return; // Sprite failed to load
 
     const w = img.width * this.scale;
     const h = img.height * this.scale;
 
-    // simple shadow under the feet
+    // Shadow
     ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
     ctx.beginPath();
     ctx.ellipse(this.x, this.y, w * 0.32, 7, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // anchor on the feet: bottom-centre of the sprite, minus the empty padding
+    // Anchor on the feet: bottom-centre, minus the empty padding
     const left = Math.round(this.x - w / 2);
     const top = Math.round(this.y - h * (1 - FOOT_PAD));
     ctx.drawImage(img, left, top, w, h);
 
-    // remember roughly where the body is, so flowers in front of it know to fade
+    // Body box (middle 70% wide, 80% tall) so flowers in front know to fade.
+    // Not the walking limits (`bounds` below).
     this.bounds = {
       left: left + w * 0.15,
       right: left + w * 0.85,
@@ -146,6 +175,7 @@ class Actor {
 }
 
 // ---------- Player input (4-directional) ----------
+// Key -> direction [dx, dy]
 const DIR_KEYS = {
   arrowleft: [-1, 0],
   a: [-1, 0],
@@ -156,11 +186,12 @@ const DIR_KEYS = {
   arrowdown: [0, 1],
   s: [0, 1],
 };
-const heldDirs = []; // held direction keys, most recently pressed last
+const heldDirs = []; // Held direction keys, newest last
 
 window.addEventListener("keydown", (e) => {
-  if (e.key.startsWith("Arrow")) e.preventDefault(); // stop the page scrolling
+  if (e.key.startsWith("Arrow")) e.preventDefault(); // Don't scroll the page
   const key = e.key.toLowerCase();
+  // Once per press, not while held
   if (TRANSFORM_KEYS.includes(key) && !e.repeat) transformPlayer();
   if (key in DIR_KEYS && !heldDirs.includes(key)) heldDirs.push(key);
 });
@@ -169,10 +200,11 @@ window.addEventListener("keyup", (e) => {
   if (i !== -1) heldDirs.splice(i, 1);
 });
 window.addEventListener("blur", () => {
+  // keyup never fires if focus is lost, so clear held keys
   heldDirs.length = 0;
 });
 
-// The newest held key wins, so tapping a new direction while holding another switches to it
+// This frame's direction as { dx, dy }. The newest held key wins.
 function readInput() {
   const key = heldDirs[heldDirs.length - 1];
   if (!key) return { dx: 0, dy: 0 };
@@ -181,10 +213,10 @@ function readInput() {
 }
 
 // ---------- Transformation ----------
-let player = null;
-let formIndex = 0;
+let player = null; // The player's Actor (created in start())
+let formIndex = 0; // Current entry in PLAYER_FORMS
 
-// Only the player's appearance and speed change. The wandering Pokemon are not affected.
+// Next form, wrapping around. Changes the player only, not the wanderers.
 function transformPlayer() {
   if (!player) return;
   formIndex = (formIndex + 1) % PLAYER_FORMS.length;
@@ -192,19 +224,22 @@ function transformPlayer() {
 }
 
 // ---------- Wandering Pokemon ----------
+// Each one alternates between walking in a random direction and resting.
 const rand = (min, max) => min + Math.random() * (max - min);
 const WANDER_DIRS = [
-  [0, 1],
-  [0, -1],
-  [-1, 0],
-  [1, 0],
+  [0, 1], // down
+  [0, -1], // up
+  [-1, 0], // left
+  [1, 0], // right
 ];
 
+// Wraps an Actor with wander state: walking or resting, time left, direction
 function makeWanderer(actor) {
   return { actor, walking: false, timer: rand(0.5, 2), dx: 0, dy: 0 };
 }
 
 function updateWanderer(w, dt) {
+  // Timer up: switch between walking and resting
   w.timer -= dt;
   if (w.timer <= 0) {
     w.walking = !w.walking;
@@ -219,15 +254,15 @@ function updateWanderer(w, dt) {
   }
   const { x, y } = w.actor;
   w.actor.step(w.dx, w.dy, dt);
-  // walked into the edge of the field: stop and rest
+  // Didn't move, so it hit an edge: rest
   if (w.walking && w.actor.x === x && w.actor.y === y) w.timer = 0;
 }
 
 // ---------- Maps ----------
-// The current map's walking limits (feet position). Changes with each map, see boundsFor.
+// The current map's walking limits (feet). Replaced on each map change.
 let bounds = { minX: WALL_X, maxX: GAME_W - WALL_X, minY: MIN_Y, maxY: MAX_Y };
 
-// A side with an exit is open almost to the screen edge, so you can walk off it
+// Walking limits for a map. A side with an exit is open almost to the edge.
 function boundsFor(def) {
   const exits = def.exits || {};
   return {
@@ -238,19 +273,22 @@ function boundsFor(def) {
   };
 }
 
-let titleImgs = []; // loaded once in start
-let meadowImgs = [];
-const builtMaps = {}; // grass and flowers per map id, built the first time you visit
+let titleImgs = []; // Title flower images (loaded in start())
+let meadowImgs = []; // Scattered flower images (loaded in start())
+const builtMaps = {}; // Built maps by id (built on first visit)
 let currentMap = null; // { def, grassLayer, props }
-let wanderers = [];
-let actors = [];
+let wanderers = []; // This map's wandering Pokemon
+let actors = []; // Player + wanderers (for draw order and flower fading)
 
+// Returns a map by id, building its grass and flowers on first use.
+// def is its entry in data/maps.js.
 function getMap(id) {
   if (!builtMaps[id]) {
     const def = MAPS[id];
     builtMaps[id] = {
       def,
       grassLayer: buildGrassLayer(def.grassSeed),
+      // Title flowers (if the map has a title), then scattered flowers
       props: [
         ...(def.title ? makeTitleProps(titleImgs) : []),
         ...makeMeadowProps(meadowImgs, {
@@ -263,7 +301,8 @@ function getMap(id) {
   return builtMaps[id];
 }
 
-// side: the edge the player just walked off ("left" or "right"); leave it out for the very first map
+// Puts the player on a map and creates its wanderers.
+// side: the edge just walked off ("left" or "right"); omit for the first map.
 function enterMap(id, side) {
   currentMap = getMap(id);
   const def = currentMap.def;
@@ -274,9 +313,11 @@ function enterMap(id, side) {
   );
   actors = [player, ...wanderers.map((w) => w.actor)];
 
-  if (side === "right") player.x = bounds.minX + ARRIVE_INSET; // walked off the right, so appear on the left
+  // Appear on the opposite side from the edge just left
+  if (side === "right") player.x = bounds.minX + ARRIVE_INSET; // Walked off the right, so appear on the left
   else if (side === "left") player.x = bounds.maxX - ARRIVE_INSET;
   else {
+    // First map: use its start point
     player.x = def.start.x;
     player.y = def.start.y;
   }
@@ -284,10 +325,11 @@ function enterMap(id, side) {
 }
 
 // ---------- Changing map ----------
-let fade = 0; // 0 = clear, 1 = fully black
+let fade = 0; // Black overlay: 0 = clear, 1 = black
 let pending = null; // { id, side } while fading out to the next map
 
-// Walking into an open edge that has an exit starts the change
+// Starts a map change when walking into an open edge that has an exit.
+// dx: walking direction (negative = left, positive = right)
 function checkExit(dx) {
   const exits = currentMap.def.exits || {};
   if (dx > 0 && exits.right && player.x >= bounds.maxX)
@@ -298,7 +340,7 @@ function checkExit(dx) {
 
 // ---------- Start ----------
 async function start() {
-  // load every character listed in the data folder
+  // Load sprites for every character
   await Promise.all(
     Object.entries(CHARACTERS).map(async ([id, c]) => {
       spriteSets[id] = await loadSpriteSet(c.sprites.normal.base, {
@@ -307,8 +349,8 @@ async function start() {
     }),
   );
 
-  // flower sprites, loaded once and shared by every map
-  // (anything whose sprite is missing is just left out)
+  // Load flower sprites once, shared by all maps. Missing ones are left out.
+  // Title flowers keep their weight (how often each is used).
   titleImgs = (
     await Promise.all(
       TITLE_FLOWERS.map(async (f) => ({
@@ -321,23 +363,26 @@ async function start() {
     Boolean,
   );
 
+  // Create the player (enterMap sets their position)
   player = new Actor(PLAYER_FORMS[formIndex], 0, 0);
   enterMap(START_MAP);
 
+  // ---------- Game loop (once per screen frame) ----------
   let last = performance.now();
   function frame(now) {
-    const dt = Math.min((now - last) / 1000, 0.05); // cap so a background tab doesn't cause a huge jump
+    const dt = Math.min((now - last) / 1000, 0.05); // Seconds; capped so a background tab doesn't cause a jump
     last = now;
 
-    // no walking while the screen is fading to the next map
+    // Player (can't walk while fading to the next map)
     const { dx, dy } = pending ? { dx: 0, dy: 0 } : readInput();
     player.step(dx, dy, dt);
     if (!pending) checkExit(dx);
 
+    // Wanderers and flowers
     wanderers.forEach((w) => updateWanderer(w, dt));
     currentMap.props.forEach((p) => p.update(dt, actors));
 
-    // fade out, swap the map while the screen is black, then fade back in
+    // Map change: fade out, swap the map at black, fade back in
     if (pending) {
       fade = Math.min(1, fade + dt / FADE_TIME);
       if (fade >= 1) {
@@ -348,13 +393,15 @@ async function start() {
       fade = Math.max(0, fade - dt / FADE_TIME);
     }
 
+    // Draw: grass first
     ctx.drawImage(currentMap.grassLayer, 0, 0);
 
-    // draw whatever is further up the screen first, so things lower down overlap it
+    // Then flowers and characters by height on screen (lower overlaps higher)
     [...currentMap.props, ...actors]
       .sort((a, b) => a.y - b.y)
       .forEach((o) => o.draw(ctx));
 
+    // Fade overlay
     if (fade > 0) {
       ctx.fillStyle = `rgba(0, 0, 0, ${fade})`;
       ctx.fillRect(0, 0, GAME_W, GAME_H);

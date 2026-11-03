@@ -7,9 +7,10 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <!-- Internal game resolution. CSS scales it to fit the window. -->
+    <!-- Size is set in main.js (GAME_W x GAME_H) -->
     <canvas id="game" width="960" height="600"></canvas>
 
+    <!-- Order matters: data first, main.js last (it starts the game) -->
     <script src="data/trainer.js"></script>
     <script src="data/pokemon.js"></script>
     <script src="data/maps.js"></script>

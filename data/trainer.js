@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------
-// Trainer data: one entry per human character.
-// Same shape as the Pokemon entries in pokemon.js, minus the Pokemon-only fields.
+// Trainers: one entry per human character.
+// Same shape as pokemon.js, minus the Pokemon-only fields.
 // ---------------------------------------------------------------
 
 const TRAINERS = {
@@ -8,11 +8,11 @@ const TRAINERS = {
     id: "clair",
     name: "Clair",
 
-    // Sprite assets
+    // Sprites
     sprites: {
       normal: {
         base: "assets/sprites/trainer/clair",
-        standing: true, // has standing poses (clair-standing-front.png, ...)
+        standing: true, // Has clair-standing-front.png, etc.
       },
     },
 
